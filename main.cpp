@@ -2,8 +2,51 @@
 #include <stack>
 #include <string>
 
-// For now, an atom is just a number.
-using Atom = int;
+struct Atom {
+  enum Type { TYPE_NUMBER, TYPE_SYMBOL };
+  Type type;
+  union {
+    int number; // Will be a double in the future probably
+    std::string *symbol;
+  };
+
+  Atom(int num) {
+    type = TYPE_NUMBER;
+    number = num;
+  }
+
+  Atom(const std::string &sym) {
+    type = TYPE_SYMBOL;
+    symbol = new std::string(sym);
+  }
+
+  Atom &operator=(const Atom &other) {
+    type = other.type;
+    if (type == TYPE_NUMBER) {
+      number = other.number;
+    } else {
+      symbol = new std::string(*other.symbol);
+    }
+    return *this;
+  }
+
+  Atom(const Atom &other) { *this = other; }
+
+  ~Atom() {
+    if (type == TYPE_SYMBOL) {
+      delete symbol;
+      symbol = nullptr;
+    }
+  }
+
+  std::string as_string() const {
+    if (type == TYPE_NUMBER) {
+      return std::to_string(number);
+    } else {
+      return *symbol;
+    }
+  }
+};
 
 // Forward declaration for ConsCell
 struct SExpression;
@@ -61,7 +104,7 @@ void print_sexp(const SExpression &sexp, bool is_first = true,
   }
 
   if (sexp.type == SExpression::TYPE_ATOM) {
-    std::cout << sexp.atom;
+    std::cout << sexp.atom.as_string();
   } else if (sexp.type == SExpression::TYPE_CONS) {
     print_sexp(*sexp.cons.car, true, false);
     // If cdr is nil, then the list is terminated
@@ -85,7 +128,7 @@ void print_sexp(const SExpression &sexp, bool is_first = true,
 // structure
 void print_dotted(const SExpression &sexp, bool new_line = true) {
   if (sexp.type == SExpression::TYPE_ATOM) {
-    std::cout << sexp.atom;
+    std::cout << sexp.atom.as_string();
   } else if (sexp.type == SExpression::TYPE_CONS) {
     std::cout << '(';
     print_dotted(*sexp.cons.car, false);
@@ -102,6 +145,11 @@ void print_dotted(const SExpression &sexp, bool new_line = true) {
 }
 
 bool is_whitespace(char c) { return c == ' ' || c == '\n' || c == '\t'; }
+
+// Returns true if c marks the end of a symbol
+bool is_end_of_symbol(char c) {
+  return is_whitespace(c) || c == '(' || c == ')';
+}
 
 bool is_numeric(char c) { return c >= '0' && c <= '9'; }
 
@@ -126,6 +174,24 @@ int parse_num(const std::string &s, size_t &i) {
   return num;
 }
 
+std::string parse_sym(const std::string &s, size_t &i) {
+  std::string sym;
+
+  while (i < s.length()) {
+    char c = s[i];
+    if (is_end_of_symbol(c)) {
+      break;
+    }
+
+    sym += c;
+    i++;
+  }
+
+  // Now i is at the point right after the symbol
+
+  return sym;
+}
+
 SExpression *execute(const std::string &s) {
   // (1 2 3) -> (1 . (2 . (3 . nil)))
   // ( - Create cons cell
@@ -146,6 +212,8 @@ SExpression *execute(const std::string &s) {
 
   for (size_t i = 0; i < s.length(); i++) {
     char c = s[i];
+
+    // TODO: going to clean up all this copy and paste
 
     if (is_numeric(c)) {
       // parse_num will modify i to be right after the number
@@ -173,10 +241,7 @@ SExpression *execute(const std::string &s) {
       // the string. So it must be decremented since it will be incremented
       // again.
       i--;
-      continue;
-    }
-
-    if (c == '(') {
+    } else if (c == '(') {
       if (current->type != SExpression::TYPE_CONS) {
         // Not inside a cons, just overwrite the current expression
         prev_cons.push(nullptr);
@@ -208,14 +273,39 @@ SExpression *execute(const std::string &s) {
           current = current->cons.car;
         }
       }
-    }
-
-    if (c == ')') {
+    } else if (c == ')') {
       // The current chain of cons cells has to end. This means that the
       // previous cons before the start of the current cons chain is now the
       // current expression.
       current = prev_cons.top();
       prev_cons.pop();
+    } else if (is_whitespace(c)) {
+      continue;
+    } else {
+      std::string sym = parse_sym(s, i);
+      if (current->type != SExpression::TYPE_CONS) {
+        // Not inside a cons, just overwrite the current expression
+        current->type = SExpression::TYPE_ATOM;
+        current->atom = sym;
+      } else {
+        if (current->cons.car->is_nil()) {
+          current->cons.car->type = SExpression::TYPE_ATOM;
+          current->cons.car->atom = sym;
+        } else {
+          // The cdr of the current expression, which is a cons, was nil, but it
+          // will now be a new cons and the current expression.
+          // This new cons will have the symbol and nil.
+          current = current->cons.cdr;
+          current->type = SExpression::TYPE_CONS;
+          current->cons.car = new SExpression(sym);
+          current->cons.cdr = new SExpression;
+        }
+      }
+
+      // After parsing a symbol, i is set to immediately after the symbol within
+      // the string. So it must be decremented since it will be incremented
+      // again.
+      i--;
     }
   }
 
