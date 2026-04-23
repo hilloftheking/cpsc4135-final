@@ -103,7 +103,7 @@ void print_dotted(const SExpression &sexp, bool new_line = true) {
 
 bool is_whitespace(char c) { return c == ' ' || c == '\n' || c == '\t'; }
 
-bool is_numeric(char c) { return c > '0' && c < '9'; }
+bool is_numeric(char c) { return c >= '0' && c <= '9'; }
 
 int parse_num(const std::string &s, size_t &i) {
   int num = 0;
