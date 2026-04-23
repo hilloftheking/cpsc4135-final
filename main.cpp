@@ -56,6 +56,8 @@ struct SExpression;
 struct ConsCell {
   SExpression *car;
   SExpression *cdr;
+
+  bool is_full();
 };
 
 class SExpression {
@@ -90,6 +92,10 @@ public:
 
   bool is_nil() { return type == TYPE_NIL; }
 };
+
+bool ConsCell::is_full() {
+  return car && cdr && !car->is_nil() && !cdr->is_nil();
+}
 
 void print_sexp(const SExpression &sexp, bool is_first = true,
                 bool new_line = true) {
@@ -203,8 +209,9 @@ SExpression *execute(const std::string &s) {
   // TODO:
   // () -> nil
 
+  // TODO: error handling
+
   SExpression *current = new SExpression();
-  SExpression *start = current;
 
   // Whenever a list is closed with ')', the previous cons before the start of
   // the list must be the new current expresssion
@@ -213,106 +220,80 @@ SExpression *execute(const std::string &s) {
   for (size_t i = 0; i < s.length(); i++) {
     char c = s[i];
 
-    // TODO: going to clean up all this copy and paste
+    if (is_whitespace(c))
+      continue;
 
-    if (is_numeric(c)) {
-      // parse_num will modify i to be right after the number
-      int num = parse_num(s, i);
-      if (current->type != SExpression::TYPE_CONS) {
-        // Not inside a cons, just overwrite the current expression
-        current->type = SExpression::TYPE_ATOM;
-        current->atom = num;
-      } else {
-        if (current->cons.car->is_nil()) {
-          current->cons.car->type = SExpression::TYPE_ATOM;
-          current->cons.car->atom = num;
-        } else {
-          // The cdr of the current expression, which is a cons, was nil, but it
-          // will now be a new cons and the current expression.
-          // This new cons will have the number and nil.
-          current = current->cons.cdr;
-          current->type = SExpression::TYPE_CONS;
-          current->cons.car = new SExpression(num);
-          current->cons.cdr = new SExpression;
-        }
-      }
-
-      // After parsing a num, i is set to immediately after the number within
-      // the string. So it must be decremented since it will be incremented
-      // again.
-      i--;
-    } else if (c == '(') {
-      if (current->type != SExpression::TYPE_CONS) {
-        // Not inside a cons, just overwrite the current expression
-        prev_cons.push(nullptr);
-        current->type = SExpression::TYPE_CONS;
-        current->cons.car = new SExpression;
-        current->cons.cdr = new SExpression;
-      } else {
-        if (current->cons.car->is_nil()) {
-          // The car of the current expression was nil, so it will now become an
-          // empty cons, which will be the new current expression.
-          prev_cons.push(current);
-          current = current->cons.car;
-          current->type = SExpression::TYPE_CONS;
-          current->cons.car = new SExpression;
-          current->cons.cdr = new SExpression;
-        } else {
-          // The cdr of the current expression, which is a cons, was nil, but it
-          // will now be a new cons and the current expression.
-          // This new cons will also have an empty cons inside its car and nil
-          // in its cdr.
-          current = current->cons.cdr;
-          current->type = SExpression::TYPE_CONS;
-          current->cons.car =
-              new SExpression(new SExpression, new SExpression); // empty cons
-          current->cons.cdr = new SExpression;
-          // Since a new cons was created, now IT is the new current
-          // expression
-          prev_cons.push(current);
-          current = current->cons.car;
-        }
-      }
-    } else if (c == ')') {
+    if (c == ')') {
       // The current chain of cons cells has to end. This means that the
       // previous cons before the start of the current cons chain is now the
       // current expression.
       current = prev_cons.top();
       prev_cons.pop();
-    } else if (is_whitespace(c)) {
       continue;
-    } else {
-      std::string sym = parse_sym(s, i);
-      if (current->type != SExpression::TYPE_CONS) {
-        // Not inside a cons, just overwrite the current expression
-        current->type = SExpression::TYPE_ATOM;
-        current->atom = sym;
-      } else {
-        if (current->cons.car->is_nil()) {
-          current->cons.car->type = SExpression::TYPE_ATOM;
-          current->cons.car->atom = sym;
-        } else {
-          // The cdr of the current expression, which is a cons, was nil, but it
-          // will now be a new cons and the current expression.
-          // This new cons will have the symbol and nil.
-          current = current->cons.cdr;
-          current->type = SExpression::TYPE_CONS;
-          current->cons.car = new SExpression(sym);
-          current->cons.cdr = new SExpression;
-        }
-      }
+    }
 
-      // After parsing a symbol, i is set to immediately after the symbol within
+    // This is the new expression that will be parsed and inserted into the
+    // current expression
+    SExpression *new_expression = nullptr;
+
+    if (c == '(') {
+      // Start of list
+      new_expression =
+          new SExpression(new SExpression, new SExpression); // Empty cons cell
+    } else if (is_numeric(c)) {
+      // Number
+      int num = parse_num(s, i);
+      new_expression = new SExpression(num);
+
+      // After parsing a num, i is set to immediately after the number within
       // the string. So it must be decremented since it will be incremented
-      // again.
+      // later.
       i--;
+    } else {
+      // Symbol
+      std::string sym = parse_sym(s, i);
+      new_expression = new SExpression(sym);
+
+      // Same as above, i must be decremented.
+      i--;
+    }
+
+    // Now insert new expression into the current expression
+
+    if (current->type != SExpression::TYPE_CONS || current->cons.is_full()) {
+      // Either not inside of a cons cell, or the cons cell is full.
+      // So the current expression should just be overwritten.
+      delete current;
+      current = new_expression;
+    } else {
+      // Current expression is a cons cell that the new expression must be
+      // inserted into.
+      if (current->cons.car->is_nil()) {
+        delete current->cons.car;
+        current->cons.car = new_expression;
+      } else {
+        // The cdr of the current expression, which is a cons, was nil, but it
+        // will now be a new cons and the current expression.
+        // This new cons will have the new expression and nil.
+        current = current->cons.cdr;
+        current->type = SExpression::TYPE_CONS;
+        current->cons.car = new_expression;
+        current->cons.cdr = new SExpression;
+      }
+    }
+
+    // If the new expression was a cons cell, it should become the new current
+    // expression
+    if (new_expression->type == SExpression::TYPE_CONS) {
+      prev_cons.push(current);
+      current = new_expression;
     }
   }
 
   // TODO: Once an expression has been finished, if it is a list, then it should
   // be executed since the first expression in it should be a function
 
-  return start;
+  return current;
 }
 
 // A few temporary helper functions for debugging
