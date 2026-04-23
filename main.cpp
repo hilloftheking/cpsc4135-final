@@ -1,6 +1,7 @@
 #include <iostream>
 #include <stack>
 #include <string>
+#include <unordered_map>
 
 struct Atom {
   enum Type { TYPE_NUMBER, TYPE_SYMBOL };
@@ -60,8 +61,7 @@ struct ConsCell {
   bool is_full();
 };
 
-class SExpression {
-public:
+struct SExpression {
   enum Type { TYPE_NIL, TYPE_ATOM, TYPE_CONS };
   Type type;
   union {
@@ -92,6 +92,13 @@ public:
 
   bool is_nil() { return type == TYPE_NIL; }
 };
+
+// A function that takes an expression and returns a new one
+using LispFunction = SExpression *(*)(SExpression *);
+
+std::unordered_map<std::string, LispFunction> functions;
+
+bool should_quit = false;
 
 bool ConsCell::is_full() {
   return car && cdr && !car->is_nil() && !cdr->is_nil();
@@ -198,7 +205,135 @@ std::string parse_sym(const std::string &s, size_t &i) {
   return sym;
 }
 
-SExpression *execute(const std::string &s) {
+SExpression *add(SExpression *expression) {
+  int result = 0;
+  while (expression->type == SExpression::TYPE_CONS) {
+    SExpression *car = expression->cons.car;
+    if (car->type == SExpression::TYPE_ATOM &&
+        car->atom.type == Atom::TYPE_NUMBER) {
+      result += car->atom.number;
+    }
+
+    expression = expression->cons.cdr;
+  }
+
+  return new SExpression(result);
+}
+
+SExpression *subtract(SExpression *expression) {
+  int result = 0;
+  bool is_first = true;
+  while (expression->type == SExpression::TYPE_CONS) {
+    SExpression *car = expression->cons.car;
+    if (car->type == SExpression::TYPE_ATOM &&
+        car->atom.type == Atom::TYPE_NUMBER) {
+      if (is_first) {
+        is_first = false;
+        result = car->atom.number;
+      } else {
+        result -= car->atom.number;
+      }
+    }
+
+    expression = expression->cons.cdr;
+  }
+
+  return new SExpression(result);
+}
+
+SExpression *multiply(SExpression *expression) {
+  int result = 1;
+  while (expression->type == SExpression::TYPE_CONS) {
+    SExpression *car = expression->cons.car;
+    if (car->type == SExpression::TYPE_ATOM &&
+        car->atom.type == Atom::TYPE_NUMBER) {
+      result *= car->atom.number;
+    }
+
+    expression = expression->cons.cdr;
+  }
+
+  return new SExpression(result);
+}
+
+SExpression *divide(SExpression *expression) {
+  int result = 0;
+  bool is_first = true;
+  while (expression->type == SExpression::TYPE_CONS) {
+    SExpression *car = expression->cons.car;
+    if (car->type == SExpression::TYPE_ATOM &&
+        car->atom.type == Atom::TYPE_NUMBER) {
+      if (is_first) {
+        is_first = false;
+        result = car->atom.number;
+      } else {
+        result /= car->atom.number;
+      }
+    }
+
+    expression = expression->cons.cdr;
+  }
+
+  return new SExpression(result);
+}
+
+SExpression *list(SExpression *expression) {
+  if (expression->is_nil()) {
+    return new SExpression;
+  } else {
+    SExpression *result =
+        new SExpression(expression->cons.car, expression->cons.cdr);
+    expression->type = SExpression::TYPE_NIL;
+    return result;
+  }
+}
+
+SExpression *quit(SExpression *expression) {
+  should_quit = true;
+  return new SExpression;
+}
+
+SExpression *evaluate(SExpression *expression) {
+  if (expression->type == SExpression::TYPE_CONS) {
+    // This expression is the start of a list
+
+    SExpression *first = expression->cons.car;
+    if (first->type != SExpression::TYPE_ATOM ||
+        first->atom.type != Atom::TYPE_SYMBOL) {
+      // Functions are associated with a symbol
+      std::cout << "ERROR: Invalid function name, expected symbol."
+                << std::endl;
+      delete expression;
+      return new SExpression;
+    }
+
+    auto it = functions.find(*first->atom.symbol);
+    if (it == functions.end()) {
+      // Symbol does not have a corresponding function
+      std::cout << "ERROR: Function " << *first->atom.symbol << " not found."
+                << std::endl;
+      delete expression;
+      return new SExpression;
+    }
+
+    LispFunction function = it->second;
+
+    SExpression *current = expression->cons.cdr;
+    while (current->type == SExpression::TYPE_CONS) {
+      // Each car can be replaced with an evaluated version :)
+      current->cons.car = evaluate(current->cons.car);
+      current = current->cons.cdr;
+    }
+
+    SExpression *result = function(expression->cons.cdr);
+    delete expression;
+    return result;
+  } else {
+    return expression;
+  }
+}
+
+SExpression *execute_string(const std::string &s) {
   // (1 2 3) -> (1 . (2 . (3 . nil)))
   // ( - Create cons cell
   // 1 - Set car of current cell to 1
@@ -209,7 +344,7 @@ SExpression *execute(const std::string &s) {
   // TODO:
   // () -> nil
 
-  // TODO: error handling
+  // TODO: more error handling
 
   SExpression *current = new SExpression();
 
@@ -224,11 +359,23 @@ SExpression *execute(const std::string &s) {
       continue;
 
     if (c == ')') {
+      if (prev_cons.empty()) {
+        std::cout << "ERROR: Unmatched right parenthesis." << std::endl;
+        delete current;
+        return new SExpression;
+      }
+
       // The current chain of cons cells has to end. This means that the
       // previous cons before the start of the current cons chain is now the
       // current expression.
       current = prev_cons.top();
       prev_cons.pop();
+
+      if (prev_cons.empty()) {
+        // The root list just got finished, so it should be evaluated now
+        current = evaluate(current);
+      }
+
       continue;
     }
 
@@ -290,35 +437,43 @@ SExpression *execute(const std::string &s) {
     }
   }
 
+  if (!prev_cons.empty()) {
+    // There is at least one unclosed list
+
+    // Keep popping from the stack until back at the original expression
+    while (!prev_cons.empty()) {
+      current = prev_cons.top();
+      prev_cons.pop();
+    }
+
+    std::cout << "ERROR: Unmatched left parenthesis." << std::endl;
+    delete current;
+    return new SExpression;
+  }
+
   // TODO: Once an expression has been finished, if it is a list, then it should
   // be executed since the first expression in it should be a function
 
   return current;
 }
 
-// A few temporary helper functions for debugging
-static SExpression *cons(SExpression *car, SExpression *cdr) {
-  return new SExpression(car, cdr);
-}
-static SExpression *atom(int n) { return new SExpression(n); }
-static SExpression *nil() { return new SExpression; }
-
 int main() {
-  // (1 (2 3 4) 5)
-  auto *a =
-      cons(atom(1), cons(cons(atom(2), cons(atom(3), cons(atom(4), nil()))),
-                         cons(atom(5), nil())));
-  print_sexp(*a);
-  print_dotted(*a);
-  delete a;
+  functions["+"] = add;
+  functions["-"] = subtract;
+  functions["*"] = multiply;
+  functions["/"] = divide;
+  functions["list"] = list;
+  functions["quit"] = quit;
 
-  std::cout << std::endl;
-
-  std::cout << ">";
   std::string input;
-  std::getline(std::cin, input);
-  SExpression *out = execute(input);
-  print_sexp(*out);
-  print_dotted(*out);
-  delete out;
+
+  while (!should_quit) {
+    std::cout << "> ";
+    std::getline(std::cin, input);
+
+    SExpression *result = execute_string(input);
+    print_sexp(*result);
+    // print_dotted(*result);
+    delete result;
+  }
 }
