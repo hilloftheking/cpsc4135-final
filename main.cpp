@@ -19,14 +19,6 @@ struct Atom {
       symbol = nullptr;
     }
   }
-
-  std::string as_string() const {
-    if (type == TYPE_NUMBER) {
-      return std::to_string(number);
-    } else {
-      return *symbol;
-    }
-  }
 };
 
 // Forward declaration for ConsCell
@@ -68,6 +60,48 @@ struct SExpression {
   bool is_full() const {
     return type != TYPE_CONS || (!cons.car->is_nil() && !cons.cdr->is_nil());
   }
+
+  std::string as_string() const {
+    // If as_string is called on a cons cell, it must be the start of a list, so
+    // it is printed with parentheses. Then inside of inner_as_string, ONLY a
+    // cons cell inside the car of another cons cell will be printed with
+    // parentheses.
+
+    if (is_cons()) {
+      return "(" + inner_as_string() + ")";
+    } else {
+      return inner_as_string();
+    }
+  }
+
+private:
+  std::string inner_as_string() const {
+    if (is_nil()) {
+      return "nil";
+    } else if (is_number()) {
+      return std::to_string(atom.number);
+    } else if (is_symbol()) {
+      return *atom.symbol;
+    } else if (is_cons()) {
+      std::string result = "";
+
+      if (cons.car->is_cons()) {
+        // Cons cell inside the car of another cons cell means a nested list
+        result += "(" + cons.car->inner_as_string() + ")";
+      } else {
+        result += cons.car->inner_as_string();
+      }
+
+      // A cdr of nil marks the end of the list
+      if (!cons.cdr->is_nil()) {
+        result += " " + cons.cdr->inner_as_string();
+      }
+
+      return result;
+    } else {
+      return "?"; // Unimplemented?
+    }
+  }
 };
 
 // A function that takes an expression and returns a new one
@@ -101,59 +135,6 @@ SExpression *make_cons(SExpression *car, SExpression *cdr) {
   sexp->cons.car = car;
   sexp->cons.cdr = cdr;
   return sexp;
-}
-
-void print_sexp(const SExpression &sexp, bool is_first = true,
-                bool new_line = true) {
-  bool start_of_list = false;
-  if (sexp.is_cons() && is_first) {
-    start_of_list = true;
-    std::cout << '(';
-  }
-
-  if (!is_first) {
-    std::cout << ' ';
-  }
-
-  if (sexp.is_atom()) {
-    std::cout << sexp.atom.as_string();
-  } else if (sexp.is_cons()) {
-    print_sexp(*sexp.cons.car, true, false);
-    // If cdr is nil, then the list is terminated
-    if (!sexp.cons.cdr->is_nil()) {
-      print_sexp(*sexp.cons.cdr, false, false);
-    }
-  } else if (sexp.is_nil()) {
-    std::cout << "nil";
-  }
-
-  if (start_of_list) {
-    std::cout << ')';
-  }
-
-  if (new_line) {
-    std::cout << std::endl;
-  }
-}
-
-// Prints a longer dotted representation that is more accurate to the cons
-// structure
-void print_dotted(const SExpression &sexp, bool new_line = true) {
-  if (sexp.is_atom()) {
-    std::cout << sexp.atom.as_string();
-  } else if (sexp.is_cons()) {
-    std::cout << '(';
-    print_dotted(*sexp.cons.car, false);
-    std::cout << " . ";
-    print_dotted(*sexp.cons.cdr, false);
-    std::cout << ')';
-  } else if (sexp.is_nil()) {
-    std::cout << "nil";
-  }
-
-  if (new_line) {
-    std::cout << std::endl;
-  }
 }
 
 bool is_whitespace(char c) { return c == ' ' || c == '\n' || c == '\t'; }
@@ -443,9 +424,6 @@ SExpression *execute_string(const std::string &s) {
     return make_nil();
   }
 
-  // TODO: Once an expression has been finished, if it is a list, then it should
-  // be executed since the first expression in it should be a function
-
   return current;
 }
 
@@ -464,8 +442,7 @@ int main() {
     std::getline(std::cin, input);
 
     SExpression *result = execute_string(input);
-    print_sexp(*result);
-    // print_dotted(*result);
+    std::cout << result->as_string() << std::endl;
     delete result;
   }
 }
