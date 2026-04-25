@@ -11,27 +11,7 @@ struct Atom {
     std::string *symbol;
   };
 
-  Atom(int num) {
-    type = TYPE_NUMBER;
-    number = num;
-  }
-
-  Atom(const std::string &sym) {
-    type = TYPE_SYMBOL;
-    symbol = new std::string(sym);
-  }
-
-  Atom &operator=(const Atom &other) {
-    type = other.type;
-    if (type == TYPE_NUMBER) {
-      number = other.number;
-    } else {
-      symbol = new std::string(*other.symbol);
-    }
-    return *this;
-  }
-
-  Atom(const Atom &other) { *this = other; }
+  Atom() {}
 
   ~Atom() {
     if (type == TYPE_SYMBOL) {
@@ -69,17 +49,6 @@ struct SExpression {
 
   SExpression() { type = TYPE_NIL; }
 
-  SExpression(const Atom &a) {
-    type = TYPE_ATOM;
-    atom = a;
-  }
-
-  SExpression(SExpression *car, SExpression *cdr) {
-    type = TYPE_CONS;
-    cons.car = car;
-    cons.cdr = cdr;
-  }
-
   ~SExpression() {
     if (type == TYPE_CONS) {
       delete cons.car;
@@ -107,6 +76,32 @@ using LispFunction = SExpression *(*)(SExpression *);
 std::unordered_map<std::string, LispFunction> functions;
 
 bool should_quit = false;
+
+SExpression *make_nil() { return new SExpression; }
+
+SExpression *make_number(int num) {
+  SExpression *sexp = new SExpression;
+  sexp->type = SExpression::TYPE_ATOM;
+  sexp->atom.type = Atom::TYPE_NUMBER;
+  sexp->atom.number = num;
+  return sexp;
+}
+
+SExpression *make_symbol(const std::string &sym) {
+  SExpression *sexp = new SExpression;
+  sexp->type = SExpression::TYPE_ATOM;
+  sexp->atom.type = Atom::TYPE_SYMBOL;
+  sexp->atom.symbol = new std::string(sym);
+  return sexp;
+}
+
+SExpression *make_cons(SExpression *car, SExpression *cdr) {
+  SExpression *sexp = new SExpression;
+  sexp->type = SExpression::TYPE_CONS;
+  sexp->cons.car = car;
+  sexp->cons.cdr = cdr;
+  return sexp;
+}
 
 void print_sexp(const SExpression &sexp, bool is_first = true,
                 bool new_line = true) {
@@ -220,7 +215,7 @@ SExpression *add(SExpression *expression) {
     expression = expression->cons.cdr;
   }
 
-  return new SExpression(result);
+  return make_number(result);
 }
 
 SExpression *subtract(SExpression *expression) {
@@ -240,7 +235,7 @@ SExpression *subtract(SExpression *expression) {
     expression = expression->cons.cdr;
   }
 
-  return new SExpression(result);
+  return make_number(result);
 }
 
 SExpression *multiply(SExpression *expression) {
@@ -254,7 +249,7 @@ SExpression *multiply(SExpression *expression) {
     expression = expression->cons.cdr;
   }
 
-  return new SExpression(result);
+  return make_number(result);
 }
 
 SExpression *divide(SExpression *expression) {
@@ -274,15 +269,14 @@ SExpression *divide(SExpression *expression) {
     expression = expression->cons.cdr;
   }
 
-  return new SExpression(result);
+  return make_number(result);
 }
 
 SExpression *list(SExpression *expression) {
   if (expression->is_nil()) {
-    return new SExpression;
+    return make_nil();
   } else {
-    SExpression *result =
-        new SExpression(expression->cons.car, expression->cons.cdr);
+    SExpression *result = make_cons(expression->cons.car, expression->cons.cdr);
     expression->type = SExpression::TYPE_NIL;
     return result;
   }
@@ -290,7 +284,7 @@ SExpression *list(SExpression *expression) {
 
 SExpression *quit(SExpression *expression) {
   should_quit = true;
-  return new SExpression;
+  return make_nil();
 }
 
 SExpression *evaluate(SExpression *expression) {
@@ -303,7 +297,7 @@ SExpression *evaluate(SExpression *expression) {
       std::cout << "ERROR: Invalid function name, expected symbol."
                 << std::endl;
       delete expression;
-      return new SExpression;
+      return make_nil();
     }
 
     auto it = functions.find(*first->atom.symbol);
@@ -312,7 +306,7 @@ SExpression *evaluate(SExpression *expression) {
       std::cout << "ERROR: Function " << *first->atom.symbol << " not found."
                 << std::endl;
       delete expression;
-      return new SExpression;
+      return make_nil();
     }
 
     LispFunction function = it->second;
@@ -345,7 +339,7 @@ SExpression *execute_string(const std::string &s) {
 
   // TODO: more error handling
 
-  SExpression *current = new SExpression();
+  SExpression *current = make_nil();
 
   // Whenever a list is closed with ')', the previous cons before the start of
   // the list must be the new current expresssion
@@ -361,7 +355,7 @@ SExpression *execute_string(const std::string &s) {
       if (prev_cons.empty()) {
         std::cout << "ERROR: Unmatched right parenthesis." << std::endl;
         delete current;
-        return new SExpression;
+        return make_nil();
       }
 
       // The current chain of cons cells has to end. This means that the
@@ -384,12 +378,11 @@ SExpression *execute_string(const std::string &s) {
 
     if (c == '(') {
       // Start of list
-      new_expression =
-          new SExpression(new SExpression, new SExpression); // Empty cons cell
+      new_expression = make_cons(make_nil(), make_nil()); // Empty cons cell
     } else if (is_numeric(c)) {
       // Number
       int num = parse_num(s, i);
-      new_expression = new SExpression(num);
+      new_expression = make_number(num);
 
       // After parsing a num, i is set to immediately after the number within
       // the string. So it must be decremented since it will be incremented
@@ -398,7 +391,7 @@ SExpression *execute_string(const std::string &s) {
     } else {
       // Symbol
       std::string sym = parse_sym(s, i);
-      new_expression = new SExpression(sym);
+      new_expression = make_symbol(sym);
 
       // Same as above, i must be decremented.
       i--;
@@ -424,7 +417,7 @@ SExpression *execute_string(const std::string &s) {
         current = current->cons.cdr;
         current->type = SExpression::TYPE_CONS;
         current->cons.car = new_expression;
-        current->cons.cdr = new SExpression;
+        current->cons.cdr = make_nil();
       }
     }
 
@@ -447,7 +440,7 @@ SExpression *execute_string(const std::string &s) {
 
     std::cout << "ERROR: Unmatched left parenthesis." << std::endl;
     delete current;
-    return new SExpression;
+    return make_nil();
   }
 
   // TODO: Once an expression has been finished, if it is a list, then it should
