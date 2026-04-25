@@ -57,8 +57,6 @@ struct SExpression;
 struct ConsCell {
   SExpression *car;
   SExpression *cdr;
-
-  bool is_full();
 };
 
 struct SExpression {
@@ -90,7 +88,17 @@ struct SExpression {
     type = TYPE_NIL;
   }
 
-  bool is_nil() { return type == TYPE_NIL; }
+  bool is_nil() const { return type == TYPE_NIL; }
+  bool is_atom() const { return type == TYPE_ATOM; }
+  bool is_cons() const { return type == TYPE_CONS; }
+
+  bool is_number() const { return is_atom() && atom.type == Atom::TYPE_NUMBER; }
+  bool is_symbol() const { return is_atom() && atom.type == Atom::TYPE_SYMBOL; }
+
+  // Returns true if the expression is not a cons cell or the cons cell is full
+  bool is_full() const {
+    return type != TYPE_CONS || (!cons.car->is_nil() && !cons.cdr->is_nil());
+  }
 };
 
 // A function that takes an expression and returns a new one
@@ -100,14 +108,10 @@ std::unordered_map<std::string, LispFunction> functions;
 
 bool should_quit = false;
 
-bool ConsCell::is_full() {
-  return car && cdr && !car->is_nil() && !cdr->is_nil();
-}
-
 void print_sexp(const SExpression &sexp, bool is_first = true,
                 bool new_line = true) {
   bool start_of_list = false;
-  if (sexp.type == SExpression::TYPE_CONS && is_first) {
+  if (sexp.is_cons() && is_first) {
     start_of_list = true;
     std::cout << '(';
   }
@@ -116,15 +120,15 @@ void print_sexp(const SExpression &sexp, bool is_first = true,
     std::cout << ' ';
   }
 
-  if (sexp.type == SExpression::TYPE_ATOM) {
+  if (sexp.is_atom()) {
     std::cout << sexp.atom.as_string();
-  } else if (sexp.type == SExpression::TYPE_CONS) {
+  } else if (sexp.is_cons()) {
     print_sexp(*sexp.cons.car, true, false);
     // If cdr is nil, then the list is terminated
-    if (sexp.cons.cdr->type != SExpression::TYPE_NIL) {
+    if (!sexp.cons.cdr->is_nil()) {
       print_sexp(*sexp.cons.cdr, false, false);
     }
-  } else if (sexp.type == SExpression::TYPE_NIL) {
+  } else if (sexp.is_nil()) {
     std::cout << "nil";
   }
 
@@ -140,15 +144,15 @@ void print_sexp(const SExpression &sexp, bool is_first = true,
 // Prints a longer dotted representation that is more accurate to the cons
 // structure
 void print_dotted(const SExpression &sexp, bool new_line = true) {
-  if (sexp.type == SExpression::TYPE_ATOM) {
+  if (sexp.is_atom()) {
     std::cout << sexp.atom.as_string();
-  } else if (sexp.type == SExpression::TYPE_CONS) {
+  } else if (sexp.is_cons()) {
     std::cout << '(';
     print_dotted(*sexp.cons.car, false);
     std::cout << " . ";
     print_dotted(*sexp.cons.cdr, false);
     std::cout << ')';
-  } else if (sexp.type == SExpression::TYPE_NIL) {
+  } else if (sexp.is_nil()) {
     std::cout << "nil";
   }
 
@@ -207,10 +211,9 @@ std::string parse_sym(const std::string &s, size_t &i) {
 
 SExpression *add(SExpression *expression) {
   int result = 0;
-  while (expression->type == SExpression::TYPE_CONS) {
+  while (expression->is_cons()) {
     SExpression *car = expression->cons.car;
-    if (car->type == SExpression::TYPE_ATOM &&
-        car->atom.type == Atom::TYPE_NUMBER) {
+    if (car->is_number()) {
       result += car->atom.number;
     }
 
@@ -223,10 +226,9 @@ SExpression *add(SExpression *expression) {
 SExpression *subtract(SExpression *expression) {
   int result = 0;
   bool is_first = true;
-  while (expression->type == SExpression::TYPE_CONS) {
+  while (expression->is_cons()) {
     SExpression *car = expression->cons.car;
-    if (car->type == SExpression::TYPE_ATOM &&
-        car->atom.type == Atom::TYPE_NUMBER) {
+    if (car->is_number()) {
       if (is_first) {
         is_first = false;
         result = car->atom.number;
@@ -243,10 +245,9 @@ SExpression *subtract(SExpression *expression) {
 
 SExpression *multiply(SExpression *expression) {
   int result = 1;
-  while (expression->type == SExpression::TYPE_CONS) {
+  while (expression->is_cons()) {
     SExpression *car = expression->cons.car;
-    if (car->type == SExpression::TYPE_ATOM &&
-        car->atom.type == Atom::TYPE_NUMBER) {
+    if (car->is_number()) {
       result *= car->atom.number;
     }
 
@@ -259,10 +260,9 @@ SExpression *multiply(SExpression *expression) {
 SExpression *divide(SExpression *expression) {
   int result = 0;
   bool is_first = true;
-  while (expression->type == SExpression::TYPE_CONS) {
+  while (expression->is_cons()) {
     SExpression *car = expression->cons.car;
-    if (car->type == SExpression::TYPE_ATOM &&
-        car->atom.type == Atom::TYPE_NUMBER) {
+    if (car->is_number()) {
       if (is_first) {
         is_first = false;
         result = car->atom.number;
@@ -294,12 +294,11 @@ SExpression *quit(SExpression *expression) {
 }
 
 SExpression *evaluate(SExpression *expression) {
-  if (expression->type == SExpression::TYPE_CONS) {
+  if (expression->is_cons()) {
     // This expression is the start of a list
 
     SExpression *first = expression->cons.car;
-    if (first->type != SExpression::TYPE_ATOM ||
-        first->atom.type != Atom::TYPE_SYMBOL) {
+    if (!first->is_symbol()) {
       // Functions are associated with a symbol
       std::cout << "ERROR: Invalid function name, expected symbol."
                 << std::endl;
@@ -319,7 +318,7 @@ SExpression *evaluate(SExpression *expression) {
     LispFunction function = it->second;
 
     SExpression *current = expression->cons.cdr;
-    while (current->type == SExpression::TYPE_CONS) {
+    while (current->is_cons()) {
       // Each car can be replaced with an evaluated version :)
       current->cons.car = evaluate(current->cons.car);
       current = current->cons.cdr;
@@ -407,7 +406,7 @@ SExpression *execute_string(const std::string &s) {
 
     // Now insert new expression into the current expression
 
-    if (current->type != SExpression::TYPE_CONS || current->cons.is_full()) {
+    if (current->is_full()) {
       // Either not inside of a cons cell, or the cons cell is full.
       // So the current expression should just be overwritten.
       delete current;
@@ -431,7 +430,7 @@ SExpression *execute_string(const std::string &s) {
 
     // If the new expression was a cons cell, it should become the new current
     // expression
-    if (new_expression->type == SExpression::TYPE_CONS) {
+    if (new_expression->is_cons()) {
       prev_cons.push(current);
       current = new_expression;
     }
