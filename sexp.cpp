@@ -1,5 +1,10 @@
 #include "sexp.hpp"
 
+SExpression::SExpression() {
+  type = TYPE_ATOM;
+  atom.type = Atom::TYPE_NIL;
+}
+
 SExpression::~SExpression() {
   if (type == TYPE_CONS) {
     delete cons.car;
@@ -9,7 +14,8 @@ SExpression::~SExpression() {
       delete atom.symbol;
     }
   }
-  type = TYPE_NIL;
+  type = TYPE_ATOM;
+  atom.type = Atom::TYPE_NIL;
 }
 
 std::string SExpression::as_string() const {

@@ -3,7 +3,7 @@
 #include <string>
 
 struct Atom {
-  enum Type { TYPE_NUMBER, TYPE_SYMBOL };
+  enum Type { TYPE_NIL, TYPE_NUMBER, TYPE_SYMBOL };
   Type type;
   union {
     int number; // Will be a double in the future probably
@@ -22,20 +22,20 @@ struct ConsCell {
 };
 
 struct SExpression {
-  enum Type { TYPE_NIL, TYPE_ATOM, TYPE_CONS };
+  enum Type { TYPE_ATOM, TYPE_CONS };
   Type type;
   union {
     Atom atom;
     ConsCell cons;
   };
 
-  SExpression() { type = TYPE_NIL; }
+  SExpression();
   ~SExpression();
 
-  bool is_nil() const { return type == TYPE_NIL; }
   bool is_atom() const { return type == TYPE_ATOM; }
   bool is_cons() const { return type == TYPE_CONS; }
 
+  bool is_nil() const { return is_atom() && atom.type == Atom::TYPE_NIL; }
   bool is_number() const { return is_atom() && atom.type == Atom::TYPE_NUMBER; }
   bool is_symbol() const { return is_atom() && atom.type == Atom::TYPE_SYMBOL; }
 

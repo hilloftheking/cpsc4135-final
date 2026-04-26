@@ -133,7 +133,8 @@ SExpression *list(SExpression *expression) {
     return make_nil();
   } else {
     SExpression *result = make_cons(expression->cons.car, expression->cons.cdr);
-    expression->type = SExpression::TYPE_NIL;
+    expression->type = SExpression::TYPE_ATOM;
+    expression->atom.type = Atom::TYPE_NIL;
     return result;
   }
 }
