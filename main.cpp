@@ -137,6 +137,19 @@ SExpression *make_cons(SExpression *car, SExpression *cdr) {
   return sexp;
 }
 
+SExpression *make_copy(SExpression *sexpr) {
+  if (sexpr->is_nil()) {
+    return make_nil();
+  } else if (sexpr->is_number()) {
+    return make_number(sexpr->atom.number);
+  } else if (sexpr->is_symbol()) {
+    return make_symbol(*sexpr->atom.symbol);
+  } else {
+    // TODO
+    return make_nil();
+  }
+}
+
 bool is_whitespace(char c) { return c == ' ' || c == '\n' || c == '\t'; }
 
 // Returns true if c marks the end of a symbol
@@ -268,7 +281,14 @@ SExpression *quit(SExpression *expression) {
   return make_nil();
 }
 
-SExpression *evaluate(SExpression *expression) {
+SExpression *eval(SExpression *expression) {
+  if (!expression->is_cons() || !expression->cons.cdr->is_nil()) {
+    std::cout << "ERROR: eval expects one argument." << std::endl;
+    return make_nil();
+  }
+
+  expression = expression->cons.car;
+
   if (expression->is_cons()) {
     // This expression is the start of a list
 
@@ -277,7 +297,6 @@ SExpression *evaluate(SExpression *expression) {
       // Functions are associated with a symbol
       std::cout << "ERROR: Invalid function name, expected symbol."
                 << std::endl;
-      delete expression;
       return make_nil();
     }
 
@@ -286,7 +305,6 @@ SExpression *evaluate(SExpression *expression) {
       // Symbol does not have a corresponding function
       std::cout << "ERROR: Function " << *first->atom.symbol << " not found."
                 << std::endl;
-      delete expression;
       return make_nil();
     }
 
@@ -295,15 +313,16 @@ SExpression *evaluate(SExpression *expression) {
     SExpression *current = expression->cons.cdr;
     while (current->is_cons()) {
       // Each car can be replaced with an evaluated version :)
-      current->cons.car = evaluate(current->cons.car);
+      SExpression *args = make_cons(current->cons.car, make_nil());
+      current->cons.car = eval(args);
+      delete args;
       current = current->cons.cdr;
     }
 
     SExpression *result = function(expression->cons.cdr);
-    delete expression;
     return result;
   } else {
-    return expression;
+    return make_copy(expression);
   }
 }
 
@@ -346,8 +365,12 @@ SExpression *execute_string(const std::string &s) {
       prev_cons.pop();
 
       if (prev_cons.empty()) {
-        // The root list just got finished, so it should be evaluated now
-        current = evaluate(current);
+        // The root list just got finished, so it should be evaluated now.
+        // eval is a function that can be called from the interpreter, so it
+        // expects a list (chained cons cells) of arguments.
+        SExpression *args = make_cons(current, make_nil());
+        current = eval(args);
+        delete args;
       }
 
       continue;
@@ -434,6 +457,7 @@ int main() {
   functions["/"] = divide;
   functions["list"] = list;
   functions["quit"] = quit;
+  functions["eval"] = eval;
 
   std::string input;
 
