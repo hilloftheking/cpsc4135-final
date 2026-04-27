@@ -21,12 +21,27 @@ struct ConsCell {
   SExpression *cdr;
 };
 
+// A function that takes an expression and returns a new one
+// This can be exposed as either a function or special operator
+using NativeProcedure = SExpression *(*)(SExpression *);
+
 struct SExpression {
-  enum Type { TYPE_ATOM, TYPE_CONS };
+  enum Type {
+    TYPE_ATOM,            // Holds an atom
+    TYPE_CONS,            // Holds a cons cell
+    TYPE_NATIVE_FUNCTION, // Holds a native function inside of native_procedure.
+                          // Each argument should be evaluated before being
+                          // called. The returned expression should not be
+                          // evaluated.
+    TYPE_SPECIAL_OPERATOR // Holds a native special operator function inside of
+                          // native_procedure. Neither the arguments nor the
+                          // returned expression should be evaluated.
+  };
   Type type;
   union {
     Atom atom;
     ConsCell cons;
+    NativeProcedure native_procedure;
   };
 
   SExpression();
@@ -34,6 +49,8 @@ struct SExpression {
 
   bool is_atom() const { return type == TYPE_ATOM; }
   bool is_cons() const { return type == TYPE_CONS; }
+  bool is_native_function() const { return type == TYPE_NATIVE_FUNCTION; }
+  bool is_special_operator() const { return type == TYPE_SPECIAL_OPERATOR; }
 
   bool is_nil() const { return is_atom() && atom.type == Atom::TYPE_NIL; }
   bool is_number() const { return is_atom() && atom.type == Atom::TYPE_NUMBER; }
@@ -57,5 +74,9 @@ SExpression *make_number(int num);
 SExpression *make_symbol(const std::string &sym);
 
 SExpression *make_cons(SExpression *car, SExpression *cdr);
+
+SExpression *make_native_function(NativeProcedure proc);
+
+SExpression *make_special_operator(NativeProcedure proc);
 
 SExpression *make_copy(SExpression *sexpr);

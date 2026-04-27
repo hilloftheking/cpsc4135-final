@@ -5,10 +5,7 @@
 
 #include "sexp.hpp"
 
-// A function that takes an expression and returns a new one
-using LispFunction = SExpression *(*)(SExpression *);
-
-std::unordered_map<std::string, LispFunction> functions;
+std::unordered_map<std::string, SExpression *> globals;
 
 bool should_quit = false;
 
@@ -155,35 +152,49 @@ SExpression *eval(SExpression *expression) {
   if (expression->is_cons()) {
     // This expression is the start of a list
 
-    SExpression *first = expression->cons.car;
-    if (!first->is_symbol()) {
-      // Functions are associated with a symbol
-      std::cout << "ERROR: Invalid function name, expected symbol."
-                << std::endl;
-      return make_nil();
+    // Temporarily set cdr of expression to nil so it can be passed as a list of
+    // one argument to eval() again
+    SExpression *old_cdr = expression->cons.cdr;
+    expression->cons.cdr = make_nil();
+
+    SExpression *func = eval(expression);
+
+    // Now restore the expression
+    delete expression->cons.cdr;
+    expression->cons.cdr = old_cdr;
+
+    SExpression *result;
+
+    if (func->is_native_function()) {
+      SExpression *current = expression->cons.cdr;
+      while (current->is_cons()) {
+        // Each car can be replaced with an evaluated version :)
+        SExpression *args = make_cons(current->cons.car, make_nil());
+        current->cons.car = eval(args);
+        delete args;
+        current = current->cons.cdr;
+      }
+
+      result = func->native_procedure(expression->cons.cdr);
+    } else if (func->is_special_operator()) {
+      // TODO
+      result = make_nil();
+    } else {
+      std::cout << "ERROR: Invalid function" << std::endl;
+      result = make_nil();
     }
 
-    auto it = functions.find(*first->atom.symbol);
-    if (it == functions.end()) {
-      // Symbol does not have a corresponding function
-      std::cout << "ERROR: Function " << *first->atom.symbol << " not found."
-                << std::endl;
-      return make_nil();
-    }
-
-    LispFunction function = it->second;
-
-    SExpression *current = expression->cons.cdr;
-    while (current->is_cons()) {
-      // Each car can be replaced with an evaluated version :)
-      SExpression *args = make_cons(current->cons.car, make_nil());
-      current->cons.car = eval(args);
-      delete args;
-      current = current->cons.cdr;
-    }
-
-    SExpression *result = function(expression->cons.cdr);
+    delete func;
     return result;
+  } else if (expression->is_symbol()) {
+    auto it = globals.find(*expression->atom.symbol);
+
+    if (it == globals.end()) {
+      std::cout << "ERROR: Variable does not exist." << std::endl;
+      return make_nil();
+    } else {
+      return make_copy(it->second);
+    }
   } else {
     return make_copy(expression);
   }
@@ -314,13 +325,13 @@ SExpression *execute_string(const std::string &s) {
 }
 
 int main() {
-  functions["+"] = add;
-  functions["-"] = subtract;
-  functions["*"] = multiply;
-  functions["/"] = divide;
-  functions["list"] = list;
-  functions["quit"] = quit;
-  functions["eval"] = eval;
+  globals["+"] = make_native_function(add);
+  globals["-"] = make_native_function(subtract);
+  globals["*"] = make_native_function(multiply);
+  globals["/"] = make_native_function(divide);
+  globals["list"] = make_native_function(list);
+  globals["quit"] = make_native_function(quit);
+  globals["eval"] = make_native_function(eval);
 
   std::string input;
 
