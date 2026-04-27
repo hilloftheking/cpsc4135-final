@@ -102,20 +102,3 @@ SExpression *make_special_operator(NativeProcedure proc) {
   sexp->native_procedure = proc;
   return sexp;
 }
-
-SExpression *make_copy(SExpression *sexpr) {
-  if (sexpr->is_nil()) {
-    return make_nil();
-  } else if (sexpr->is_number()) {
-    return make_number(sexpr->atom.number);
-  } else if (sexpr->is_symbol()) {
-    return make_symbol(*sexpr->atom.symbol);
-  } else if (sexpr->is_native_function()) {
-    return make_native_function(sexpr->native_procedure);
-  } else if (sexpr->is_special_operator()) {
-    return make_special_operator(sexpr->native_procedure);
-  } else {
-    // TODO
-    return make_nil();
-  }
-}

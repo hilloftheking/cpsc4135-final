@@ -81,5 +81,3 @@ SExpression *make_cons(SExpression *car, SExpression *cdr);
 SExpression *make_native_function(NativeProcedure proc);
 
 SExpression *make_special_operator(NativeProcedure proc);
-
-SExpression *make_copy(SExpression *sexpr);
