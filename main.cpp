@@ -57,6 +57,86 @@ std::string parse_sym(const std::string &s, size_t &i) {
   return sym;
 }
 
+SExpression *eval_sexp(SExpression *expression) {
+  if (expression->is_cons()) {
+    // This expression is the start of a list
+
+    // Eval the first element of the list to get the function expression
+    SExpression *func = eval_sexp(expression->cons.car);
+
+    SExpression *result;
+
+    if (func->is_native_function()) {
+      SExpression *current = expression->cons.cdr;
+      while (current->is_cons()) {
+        // Each car can be replaced with an evaluated version :)
+        SExpression *new_arg = eval_sexp(current->cons.car);
+        delete current->cons.car;
+        current->cons.car = new_arg;
+
+        current = current->cons.cdr;
+      }
+
+      result = func->native_procedure(expression->cons.cdr);
+    } else if (func->is_special_operator()) {
+      result = func->native_procedure(expression->cons.cdr);
+    } else {
+      std::cout << "ERROR: Invalid function." << std::endl;
+      result = make_nil();
+    }
+
+    delete func;
+    return result;
+  } else if (expression->is_symbol()) {
+    const std::string &sym = *expression->atom.symbol;
+    auto it = globals.find(sym);
+
+    if (it == globals.end()) {
+      std::cout << "ERROR: Variable " << sym << " does not exist." << std::endl;
+      return make_nil();
+    } else {
+      return make_copy(it->second);
+    }
+  } else {
+    return make_copy(expression);
+  }
+}
+
+SExpression *quote(SExpression *expression) {
+  if (!expression->is_cons()) {
+    std::cout << "ERROR: quote expects one argument." << std::endl;
+    return make_nil();
+  }
+
+  return make_copy(expression->cons.car);
+}
+
+SExpression *define(SExpression *expression) {
+  do {
+    if (!expression->is_cons())
+      break;
+
+    SExpression *symbol = expression->cons.car;
+    if (!symbol->is_symbol())
+      break;
+
+    SExpression *second = expression->cons.cdr;
+    if (!second->is_cons())
+      break;
+
+    SExpression *value_exp = second->cons.car;
+    SExpression *value = eval_sexp(value_exp);
+    globals[*symbol->atom.symbol] = value;
+
+    return make_copy(value);
+  } while (false);
+
+  std::cout << "ERROR: define expects two arguments, where the first is a "
+               "symbol, and the second is the value expression."
+            << std::endl;
+  return make_nil();
+}
+
 SExpression *add(SExpression *expression) {
   int result = 0;
   while (expression->is_cons()) {
@@ -147,57 +227,7 @@ SExpression *eval(SExpression *expression) {
     return make_nil();
   }
 
-  expression = expression->cons.car;
-
-  if (expression->is_cons()) {
-    // This expression is the start of a list
-
-    // Temporarily set cdr of expression to nil so it can be passed as a list of
-    // one argument to eval() again
-    SExpression *old_cdr = expression->cons.cdr;
-    expression->cons.cdr = make_nil();
-
-    SExpression *func = eval(expression);
-
-    // Now restore the expression
-    delete expression->cons.cdr;
-    expression->cons.cdr = old_cdr;
-
-    SExpression *result;
-
-    if (func->is_native_function()) {
-      SExpression *current = expression->cons.cdr;
-      while (current->is_cons()) {
-        // Each car can be replaced with an evaluated version :)
-        SExpression *args = make_cons(current->cons.car, make_nil());
-        current->cons.car = eval(args);
-        delete args;
-        current = current->cons.cdr;
-      }
-
-      result = func->native_procedure(expression->cons.cdr);
-    } else if (func->is_special_operator()) {
-      // TODO
-      result = make_nil();
-    } else {
-      std::cout << "ERROR: Invalid function" << std::endl;
-      result = make_nil();
-    }
-
-    delete func;
-    return result;
-  } else if (expression->is_symbol()) {
-    auto it = globals.find(*expression->atom.symbol);
-
-    if (it == globals.end()) {
-      std::cout << "ERROR: Variable does not exist." << std::endl;
-      return make_nil();
-    } else {
-      return make_copy(it->second);
-    }
-  } else {
-    return make_copy(expression);
-  }
+  return eval_sexp(expression->cons.car);
 }
 
 SExpression *execute_string(const std::string &s) {
@@ -240,11 +270,9 @@ SExpression *execute_string(const std::string &s) {
 
       if (prev_cons.empty()) {
         // The root list just got finished, so it should be evaluated now.
-        // eval is a function that can be called from the interpreter, so it
-        // expects a list (chained cons cells) of arguments.
-        SExpression *args = make_cons(current, make_nil());
-        current = eval(args);
-        delete args;
+        SExpression *new_current = eval_sexp(current);
+        delete current;
+        current = new_current;
       }
 
       continue;
@@ -325,6 +353,8 @@ SExpression *execute_string(const std::string &s) {
 }
 
 int main() {
+  globals["quote"] = make_special_operator(quote);
+  globals["define"] = make_special_operator(define);
   globals["+"] = make_native_function(add);
   globals["-"] = make_native_function(subtract);
   globals["*"] = make_native_function(multiply);
