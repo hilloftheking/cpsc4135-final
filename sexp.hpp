@@ -44,6 +44,9 @@ struct SExpression {
     NativeProcedure native_procedure;
   };
 
+  // Used by the garbage collector to know what expressions can be freed.
+  bool gc_marked;
+
   SExpression();
   ~SExpression();
 

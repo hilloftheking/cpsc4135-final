@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 
+#include "gc.hpp"
 #include "sexp.hpp"
 
 std::unordered_map<std::string, SExpression *> globals;
@@ -71,7 +72,6 @@ SExpression *eval_sexp(SExpression *expression) {
       while (current->is_cons()) {
         // Each car can be replaced with an evaluated version :)
         SExpression *new_arg = eval_sexp(current->cons.car);
-        delete current->cons.car;
         current->cons.car = new_arg;
 
         current = current->cons.cdr;
@@ -85,7 +85,6 @@ SExpression *eval_sexp(SExpression *expression) {
       result = make_nil();
     }
 
-    delete func;
     return result;
   } else if (expression->is_symbol()) {
     const std::string &sym = *expression->atom.symbol;
@@ -95,10 +94,10 @@ SExpression *eval_sexp(SExpression *expression) {
       std::cout << "ERROR: Variable " << sym << " does not exist." << std::endl;
       return make_nil();
     } else {
-      return make_copy(it->second);
+      return it->second;
     }
   } else {
-    return make_copy(expression);
+    return expression;
   }
 }
 
@@ -108,7 +107,7 @@ SExpression *quote(SExpression *expression) {
     return make_nil();
   }
 
-  return make_copy(expression->cons.car);
+  return expression->cons.car;
 }
 
 SExpression *define(SExpression *expression) {
@@ -128,7 +127,7 @@ SExpression *define(SExpression *expression) {
     SExpression *value = eval_sexp(value_exp);
     globals[*symbol->atom.symbol] = value;
 
-    return make_copy(value);
+    return value;
   } while (false);
 
   std::cout << "ERROR: define expects two arguments, where the first is a "
@@ -209,10 +208,7 @@ SExpression *list(SExpression *expression) {
   if (expression->is_nil()) {
     return make_nil();
   } else {
-    SExpression *result = make_cons(expression->cons.car, expression->cons.cdr);
-    expression->type = SExpression::TYPE_ATOM;
-    expression->atom.type = Atom::TYPE_NIL;
-    return result;
+    return expression;
   }
 }
 
@@ -258,7 +254,6 @@ SExpression *execute_string(const std::string &s) {
     if (c == ')') {
       if (prev_cons.empty()) {
         std::cout << "ERROR: Unmatched right parenthesis." << std::endl;
-        delete current;
         return make_nil();
       }
 
@@ -270,9 +265,7 @@ SExpression *execute_string(const std::string &s) {
 
       if (prev_cons.empty()) {
         // The root list just got finished, so it should be evaluated now.
-        SExpression *new_current = eval_sexp(current);
-        delete current;
-        current = new_current;
+        current = eval_sexp(current);
       }
 
       continue;
@@ -308,21 +301,17 @@ SExpression *execute_string(const std::string &s) {
     if (current->is_full()) {
       // Either not inside of a cons cell, or the cons cell is full.
       // So the current expression should just be overwritten.
-      delete current;
       current = new_expression;
 
       if (!current->is_cons()) {
         // A list is not being created, so whatever expression got made should
         // just be evaluated right now.
-        SExpression *new_current = eval_sexp(current);
-        delete current;
-        current = new_current;
+        current = eval_sexp(current);
       }
     } else {
       // Current expression is a cons cell that the new expression must be
       // inserted into.
       if (current->cons.car->is_nil()) {
-        delete current->cons.car;
         current->cons.car = new_expression;
       } else {
         // The cdr of the current expression, which is a cons, was nil, but it
@@ -353,7 +342,6 @@ SExpression *execute_string(const std::string &s) {
     }
 
     std::cout << "ERROR: Unmatched left parenthesis." << std::endl;
-    delete current;
     return make_nil();
   }
 
@@ -381,6 +369,7 @@ int main() {
 
     SExpression *result = execute_string(input);
     std::cout << result->as_string() << std::endl;
-    delete result;
+
+    gc_collect(globals);
   }
 }

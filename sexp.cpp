@@ -1,15 +1,15 @@
 #include "sexp.hpp"
+#include "gc.hpp"
 
 SExpression::SExpression() {
   type = TYPE_ATOM;
   atom.type = Atom::TYPE_NIL;
+  gc_add_sexp(this); // Each expression should be created on the heap, and the
+                     // garbage collector will manage them
 }
 
 SExpression::~SExpression() {
-  if (type == TYPE_CONS) {
-    delete cons.car;
-    delete cons.cdr;
-  } else if (type == TYPE_ATOM) {
+  if (type == TYPE_ATOM) {
     if (atom.type == Atom::TYPE_SYMBOL) {
       delete atom.symbol;
     }
