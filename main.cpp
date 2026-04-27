@@ -310,6 +310,14 @@ SExpression *execute_string(const std::string &s) {
       // So the current expression should just be overwritten.
       delete current;
       current = new_expression;
+
+      if (!current->is_cons()) {
+        // A list is not being created, so whatever expression got made should
+        // just be evaluated right now.
+        SExpression *new_current = eval_sexp(current);
+        delete current;
+        current = new_current;
+      }
     } else {
       // Current expression is a cons cell that the new expression must be
       // inserted into.
@@ -353,6 +361,8 @@ SExpression *execute_string(const std::string &s) {
 }
 
 int main() {
+  globals["nil"] = make_nil();
+
   globals["quote"] = make_special_operator(quote);
   globals["define"] = make_special_operator(define);
   globals["+"] = make_native_function(add);
