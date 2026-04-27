@@ -54,6 +54,10 @@ std::string SExpression::inner_as_string() const {
     }
 
     return result;
+  } else if (is_native_function()) {
+    return "<native-function>";
+  } else if (is_special_operator()) {
+    return "<special-operator>";
   } else {
     return "?"; // Unimplemented?
   }
