@@ -61,6 +61,8 @@ std::string parse_sym(const std::string &s, size_t &i) {
   return sym;
 }
 
+SExpression *progn(SExpression *expression);
+
 SExpression *eval_sexp(SExpression *expression) {
   if (expression->is_cons()) {
     // This expression is the start of a list
@@ -107,10 +109,7 @@ SExpression *eval_sexp(SExpression *expression) {
         curr_arg = curr_arg->cons.cdr;
       }
 
-      while (body->is_cons()) {
-        result = eval_sexp(body->cons.car);
-        body = body->cons.cdr;
-      }
+      result = progn(body);
 
       environment.pop_back();
     } else {
@@ -140,6 +139,19 @@ SExpression *eval_sexp(SExpression *expression) {
   } else {
     return expression;
   }
+}
+
+SExpression *progn(SExpression *expression) {
+  SExpression *result = nullptr;
+  while (expression->is_cons()) {
+    result = eval_sexp(expression->cons.car);
+    expression = expression->cons.cdr;
+  }
+
+  if (!result)
+    result = make_nil();
+
+  return result;
 }
 
 SExpression *quote(SExpression *expression) {
@@ -210,6 +222,81 @@ SExpression *define(SExpression *expression) {
   } while (false);
 
   std::cout << "ERROR: invalid usage of define" << std::endl;
+  return make_nil();
+}
+
+SExpression *cond(SExpression *expression) {
+  do {
+    if (!expression->is_cons())
+      break;
+
+    bool invalid = false;
+
+    SExpression *current = expression;
+    while (current->is_cons()) {
+      SExpression *clause = current->cons.car;
+      if (!clause->is_cons()) {
+        invalid = true;
+        break;
+      }
+
+      SExpression *test_form = clause->cons.car;
+
+      SExpression *action = clause->cons.cdr;
+      if (action->is_nil()) {
+        invalid = true;
+        break;
+      }
+
+      SExpression *test_result = eval_sexp(test_form);
+      if (!test_result->is_nil()) {
+        return progn(action);
+      }
+
+      current = current->cons.cdr;
+    }
+
+    if (invalid)
+      break;
+
+    return make_nil();
+  } while (false);
+
+  std::cout << "ERROR: invalid usage of cond" << std::endl;
+  return make_nil();
+}
+
+SExpression *equal(SExpression *expression) {
+  do {
+    if (!expression->is_cons())
+      break;
+
+    SExpression *first = expression->cons.car;
+
+    expression = expression->cons.cdr;
+    if (!expression->is_cons())
+      break;
+
+    SExpression *second = expression->cons.car;
+
+    if (first->type != second->type)
+      return make_nil();
+
+    if (first->type == SExpression::TYPE_ATOM) {
+      if (first->atom.type != second->atom.type)
+        return make_nil();
+
+      if (first->atom.type == Atom::TYPE_NUMBER) {
+        if (first->atom.number == second->atom.number) {
+          return make_symbol("t");
+        }
+      }
+    }
+
+    return make_nil();
+  } while (false);
+
+  std::cout << "ERROR: = expects two arguments." << std::endl;
   return make_nil();
 }
 
@@ -439,10 +526,14 @@ int main() {
     Scope &globals = environment.back();
 
     globals["nil"] = make_nil();
+    globals["t"] = make_symbol("t");
 
+    globals["progn"] = make_special_operator(progn);
     globals["quote"] = make_special_operator(quote);
     globals["define"] = make_special_operator(define);
+    globals["cond"] = make_special_operator(cond);
 
+    globals["="] = make_native_function(equal);
     globals["+"] = make_native_function(add);
     globals["-"] = make_native_function(subtract);
     globals["*"] = make_native_function(multiply);
