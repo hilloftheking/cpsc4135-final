@@ -2,11 +2,14 @@
 #include <stack>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "gc.hpp"
 #include "sexp.hpp"
 
-std::unordered_map<std::string, SExpression *> globals;
+using Scope = std::unordered_map<std::string, SExpression *>;
+
+std::vector<Scope> environment;
 
 bool should_quit = false;
 
@@ -88,14 +91,22 @@ SExpression *eval_sexp(SExpression *expression) {
     return result;
   } else if (expression->is_symbol()) {
     const std::string &sym = *expression->atom.symbol;
-    auto it = globals.find(sym);
 
-    if (it == globals.end()) {
-      std::cout << "ERROR: Variable " << sym << " does not exist." << std::endl;
-      return make_nil();
-    } else {
-      return it->second;
+    // Go backwards through the environment in order to prioritize the most
+    // local scope
+    for (auto scope_it = environment.rbegin(); scope_it != environment.rend();
+         scope_it++) {
+      Scope &scope = *scope_it;
+
+      auto sexpr_it = scope.find(sym);
+      if (sexpr_it != scope.end()) {
+        return sexpr_it->second;
+      }
     }
+
+    // Variable was not found
+    std::cout << "ERROR: Variable " << sym << " does not exist." << std::endl;
+    return make_nil();
   } else {
     return expression;
   }
@@ -125,7 +136,8 @@ SExpression *define(SExpression *expression) {
 
     SExpression *value_exp = second->cons.car;
     SExpression *value = eval_sexp(value_exp);
-    globals[*symbol->atom.symbol] = value;
+    // Use the global scope when using define
+    environment.front()[*symbol->atom.symbol] = value;
 
     return value;
   } while (false);
@@ -357,6 +369,9 @@ SExpression *execute_string(const std::string &s) {
 }
 
 int main() {
+  environment.push_back({});
+  Scope &globals = environment.back();
+
   globals["nil"] = make_nil();
 
   globals["quote"] = make_special_operator(quote);
