@@ -33,8 +33,10 @@ void gc_collect(const std::unordered_map<std::string, SExpression *> &globals) {
 
     sexp->gc_marked = true;
     if (sexp->is_cons()) {
-      need_to_check.push(sexp->cons.car);
-      need_to_check.push(sexp->cons.cdr);
+      if (sexp->cons.car)
+        need_to_check.push(sexp->cons.car);
+      if (sexp->cons.cdr)
+        need_to_check.push(sexp->cons.cdr);
     }
   }
 

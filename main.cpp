@@ -234,10 +234,7 @@ SExpression *execute_string(const std::string &s) {
   // 2 - Set cdr of current cell to new cons cell, where its car is set to 2
   // And so on
 
-  // TODO:
   // () -> nil
-
-  // TODO: more error handling
 
   SExpression *current = make_nil();
 
@@ -255,6 +252,18 @@ SExpression *execute_string(const std::string &s) {
       if (prev_cons.empty()) {
         std::cout << "ERROR: Unmatched right parenthesis." << std::endl;
         return make_nil();
+      }
+
+      if (current->cons.car == nullptr) {
+        // If the car of this cons cell is nullptr, that means that this is an
+        // empty list -> ().
+        // So this cons cell expression should be turned into a nil expression.
+        current->type = SExpression::TYPE_ATOM;
+        current->atom.type = Atom::TYPE_NIL;
+      } else {
+        // A non empty list just got finished. The cdr of the current cons cell
+        // should become nil instead of nullptr.
+        current->cons.cdr = make_nil();
       }
 
       // The current chain of cons cells has to end. This means that the
@@ -277,7 +286,9 @@ SExpression *execute_string(const std::string &s) {
 
     if (c == '(') {
       // Start of list
-      new_expression = make_cons(make_nil(), make_nil()); // Empty cons cell
+      // This created cons cell is special because it stores nullptr instead of
+      // nil expressions.
+      new_expression = make_cons(nullptr, nullptr);
     } else if (is_numeric(c)) {
       // Number
       int num = parse_num(s, i);
@@ -298,7 +309,7 @@ SExpression *execute_string(const std::string &s) {
 
     // Now insert new expression into the current expression
 
-    if (current->is_full()) {
+    if (!current->is_cons() || current->cons.cdr != nullptr) {
       // Either not inside of a cons cell, or the cons cell is full.
       // So the current expression should just be overwritten.
       current = new_expression;
@@ -311,16 +322,13 @@ SExpression *execute_string(const std::string &s) {
     } else {
       // Current expression is a cons cell that the new expression must be
       // inserted into.
-      if (current->cons.car->is_nil()) {
+      if (current->cons.car == nullptr) {
         current->cons.car = new_expression;
       } else {
-        // The cdr of the current expression, which is a cons, was nil, but it
-        // will now be a new cons and the current expression.
-        // This new cons will have the new expression and nil.
+        // The cdr of the current cons cell is nullptr, so it will now be a cons
+        // with the new expression as its car.
+        current->cons.cdr = make_cons(new_expression, nullptr);
         current = current->cons.cdr;
-        current->type = SExpression::TYPE_CONS;
-        current->cons.car = new_expression;
-        current->cons.cdr = make_nil();
       }
     }
 
