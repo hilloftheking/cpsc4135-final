@@ -21,7 +21,7 @@ void gc_collect(const std::unordered_map<std::string, SExpression *> &globals) {
 
   for (auto &[_, sexp] : globals) {
     sexp->gc_marked = true;
-    if (sexp->is_cons()) {
+    if (sexp->is_cons() || sexp->is_function()) {
       need_to_check.push(sexp->cons.car);
       need_to_check.push(sexp->cons.cdr);
     }
@@ -32,7 +32,7 @@ void gc_collect(const std::unordered_map<std::string, SExpression *> &globals) {
     need_to_check.pop();
 
     sexp->gc_marked = true;
-    if (sexp->is_cons()) {
+    if (sexp->is_cons() || sexp->is_function()) {
       if (sexp->cons.car)
         need_to_check.push(sexp->cons.car);
       if (sexp->cons.cdr)

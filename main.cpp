@@ -71,18 +71,48 @@ SExpression *eval_sexp(SExpression *expression) {
     SExpression *result;
 
     if (func->is_native_function()) {
+      // Create a new list of evaluated arguments
+      SExpression *evaled_args = make_nil();
+
       SExpression *current = expression->cons.cdr;
+      SExpression *current_evaled = evaled_args;
       while (current->is_cons()) {
-        // Each car can be replaced with an evaluated version :)
-        SExpression *new_arg = eval_sexp(current->cons.car);
-        current->cons.car = new_arg;
+        SExpression *evaled = eval_sexp(current->cons.car);
+
+        current_evaled->type = SExpression::TYPE_CONS;
+        current_evaled->cons.car = evaled;
+        current_evaled->cons.cdr = make_nil();
+        current_evaled = current_evaled->cons.cdr;
 
         current = current->cons.cdr;
       }
 
-      result = func->native_procedure(expression->cons.cdr);
+      result = func->native_procedure(evaled_args);
     } else if (func->is_special_operator()) {
       result = func->native_procedure(expression->cons.cdr);
+    } else if (func->is_function()) {
+      SExpression *param_list = func->cons.car;
+      SExpression *body = func->cons.cdr;
+
+      environment.push_back({});
+      Scope &scope = environment.back();
+
+      SExpression *curr_param = param_list;
+      SExpression *curr_arg = expression->cons.cdr;
+      while (curr_param->is_cons() && curr_arg->is_cons()) {
+        const std::string &param_name = *curr_param->cons.car->atom.symbol;
+        scope[param_name] = eval_sexp(curr_arg->cons.car);
+
+        curr_param = curr_param->cons.cdr;
+        curr_arg = curr_arg->cons.cdr;
+      }
+
+      while (body->is_cons()) {
+        result = eval_sexp(body->cons.car);
+        body = body->cons.cdr;
+      }
+
+      environment.pop_back();
     } else {
       std::cout << "ERROR: Invalid function." << std::endl;
       result = make_nil();
@@ -126,25 +156,60 @@ SExpression *define(SExpression *expression) {
     if (!expression->is_cons())
       break;
 
-    SExpression *symbol = expression->cons.car;
-    if (!symbol->is_symbol())
-      break;
+    // The second parameter can either be a symbol to define a variable, or a
+    // list to define a function.
+    SExpression *second = expression->cons.car;
+    if (second->is_symbol()) {
+      // Defining a variable
 
-    SExpression *second = expression->cons.cdr;
-    if (!second->is_cons())
-      break;
+      expression = expression->cons.cdr;
+      if (!expression->is_cons())
+        break;
 
-    SExpression *value_exp = second->cons.car;
-    SExpression *value = eval_sexp(value_exp);
-    // Use the global scope when using define
-    environment.front()[*symbol->atom.symbol] = value;
+      SExpression *value_exp = expression->cons.car;
+      SExpression *value = eval_sexp(value_exp);
 
-    return value;
+      // Global scope is used for define
+      environment.front()[*second->atom.symbol] = value;
+      return value;
+    } else if (second->is_cons()) {
+      // Defining a function
+
+      // func_list should be a list of symbols, where the first is the function
+      // name, and the rest are the parameter names.
+      SExpression *func_list = second;
+
+      // func_body is a list of expressions that will be sequentially evaluated
+      // when the function is called
+      SExpression *func_body = expression->cons.cdr;
+
+      SExpression *func_name_symbol = func_list->cons.car;
+      if (!func_name_symbol->is_symbol()) {
+        break;
+      }
+
+      // Make sure the parameter list is valid
+      bool is_valid = true;
+      SExpression *curr = func_list->cons.cdr;
+      while (!curr->is_nil()) {
+        if (!curr->is_cons() || !curr->cons.car->is_symbol()) {
+          is_valid = false;
+          break;
+        }
+        curr = curr->cons.cdr;
+      }
+
+      if (!is_valid)
+        break;
+
+      SExpression *function = make_cons(func_list->cons.cdr, func_body);
+      function->type = SExpression::TYPE_FUNCTION;
+      environment.front()[*func_name_symbol->atom.symbol] = function;
+      return function;
+    }
   } while (false);
 
-  std::cout << "ERROR: define expects two arguments, where the first is a "
-               "symbol, and the second is the value expression."
-            << std::endl;
+  std::cout << "ERROR: invalid usage of define" << std::endl;
   return make_nil();
 }
 
@@ -370,19 +435,22 @@ SExpression *execute_string(const std::string &s) {
 
 int main() {
   environment.push_back({});
-  Scope &globals = environment.back();
+  {
+    Scope &globals = environment.back();
 
-  globals["nil"] = make_nil();
+    globals["nil"] = make_nil();
 
-  globals["quote"] = make_special_operator(quote);
-  globals["define"] = make_special_operator(define);
-  globals["+"] = make_native_function(add);
-  globals["-"] = make_native_function(subtract);
-  globals["*"] = make_native_function(multiply);
-  globals["/"] = make_native_function(divide);
-  globals["list"] = make_native_function(list);
-  globals["quit"] = make_native_function(quit);
-  globals["eval"] = make_native_function(eval);
+    globals["quote"] = make_special_operator(quote);
+    globals["define"] = make_special_operator(define);
+
+    globals["+"] = make_native_function(add);
+    globals["-"] = make_native_function(subtract);
+    globals["*"] = make_native_function(multiply);
+    globals["/"] = make_native_function(divide);
+    globals["list"] = make_native_function(list);
+    globals["quit"] = make_native_function(quit);
+    globals["eval"] = make_native_function(eval);
+  }
 
   std::string input;
 
@@ -393,6 +461,6 @@ int main() {
     SExpression *result = execute_string(input);
     std::cout << result->as_string() << std::endl;
 
-    gc_collect(globals);
+    gc_collect(environment.front());
   }
 }

@@ -58,6 +58,8 @@ std::string SExpression::inner_as_string() const {
     return "<native-function>";
   } else if (is_special_operator()) {
     return "<special-operator>";
+  } else if (is_function()) {
+    return "<function>";
   } else {
     return "?"; // Unimplemented?
   }

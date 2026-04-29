@@ -33,9 +33,12 @@ struct SExpression {
                           // Each argument should be evaluated before being
                           // called. The returned expression should not be
                           // evaluated.
-    TYPE_SPECIAL_OPERATOR // Holds a native special operator function inside of
-                          // native_procedure. Neither the arguments nor the
-                          // returned expression should be evaluated.
+    TYPE_SPECIAL_OPERATOR, // Holds a native special operator function inside of
+                           // native_procedure. Neither the arguments nor the
+                           // returned expression should be evaluated.
+    TYPE_FUNCTION // Holds a function defined with expressions. The function is
+                  // actually stored in the cons cell, where car is the list of
+                  // parameter names, and cdr is the body of the function.
   };
   Type type;
   union {
@@ -54,15 +57,11 @@ struct SExpression {
   bool is_cons() const { return type == TYPE_CONS; }
   bool is_native_function() const { return type == TYPE_NATIVE_FUNCTION; }
   bool is_special_operator() const { return type == TYPE_SPECIAL_OPERATOR; }
+  bool is_function() const { return type == TYPE_FUNCTION; }
 
   bool is_nil() const { return is_atom() && atom.type == Atom::TYPE_NIL; }
   bool is_number() const { return is_atom() && atom.type == Atom::TYPE_NUMBER; }
   bool is_symbol() const { return is_atom() && atom.type == Atom::TYPE_SYMBOL; }
-
-  // Returns true if the expression is not a cons cell or the cons cell is full
-  bool is_full() const {
-    return type != TYPE_CONS || (!cons.car->is_nil() && !cons.cdr->is_nil());
-  }
 
   std::string as_string() const;
 
