@@ -1,0 +1,14 @@
+; Prints a list and the result after it is evaluated
+(define (run lst)
+    (print (list lst (quote returns) (eval lst))))
+
+(run (quote (+ 2 3)))
+(run (quote (* (+ 2 3) 4)))
+
+(run (quote (define x 10)))
+(run (quote (+ x 5)))
+
+(run (quote (define (square n)
+		(* n n))))
+
+(run (quote (square 5)))

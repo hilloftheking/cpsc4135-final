@@ -256,6 +256,13 @@ static SExpression *eval(SExpression *sexp) {
   return eval_sexp(sexp->cons.car);
 }
 
+static SExpression *print(SExpression *sexp) {
+  if (sexp->is_cons()) {
+    std::cout << sexp->cons.car->as_string() << std::endl;
+  }
+  return make_nil();
+}
+
 bool should_quit() { return quit_requested; }
 
 SExpression *eval_sexp(SExpression *sexp) {
@@ -370,5 +377,6 @@ void create_globals() {
     globals["list"] = make_native_function(list);
     globals["quit"] = make_native_function(quit);
     globals["eval"] = make_native_function(eval);
+    globals["print"] = make_native_function(print);
   }
 }

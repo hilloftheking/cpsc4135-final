@@ -26,9 +26,7 @@ int main(int argc, char *argv[]) {
       std::getline(fs, code, '\0');
     }
 
-    SExpression *result = eval_sexps(parse_string(code));
-    std::cout << result->as_string() << std::endl;
-
+    eval_sexps(parse_string(code));
     gc_collect();
   } else {
     // Repeatedly read from console input

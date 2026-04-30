@@ -7,6 +7,6 @@
 	  (fib (- n 1))
 	  (fib (- n 2))))))
 
-(list
- (quote (The tenth fibonacci number is))
- (fib 10))
+(print (list
+	(quote (The tenth fibonacci number is))
+	(fib 10)))
