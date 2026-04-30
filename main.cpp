@@ -2,6 +2,7 @@
 #include <iostream>
 #include <stack>
 #include <string>
+#include <vector>
 
 #include "environment.hpp"
 #include "gc.hpp"
@@ -55,7 +56,8 @@ std::string parse_sym(const std::string &s, size_t &i) {
   return sym;
 }
 
-SExpression *execute_string(const std::string &s) {
+// Parses a string into a vector of expressions that should be evaluated
+std::vector<SExpression *> parse_string(const std::string &s) {
   // (1 2 3) -> (1 . (2 . (3 . nil)))
   // ( - Create cons cell
   // 1 - Set car of current cell to 1
@@ -65,6 +67,7 @@ SExpression *execute_string(const std::string &s) {
 
   // () -> nil
 
+  std::vector<SExpression *> sexps;
   SExpression *current = make_nil();
 
   // Whenever a list is closed with ')', the previous cons before the start of
@@ -80,7 +83,7 @@ SExpression *execute_string(const std::string &s) {
     if (c == ')') {
       if (prev_cons.empty()) {
         std::cout << "ERROR: Unmatched right parenthesis." << std::endl;
-        return make_nil();
+        return sexps;
       }
 
       if (current->cons.car == nullptr) {
@@ -102,8 +105,9 @@ SExpression *execute_string(const std::string &s) {
       prev_cons.pop();
 
       if (prev_cons.empty()) {
-        // The root list just got finished, so it should be evaluated now.
-        current = eval_sexp(current);
+        // The root list just got finished, so the current expression is
+        // completed.
+        sexps.push_back(current);
       }
 
       continue;
@@ -144,9 +148,9 @@ SExpression *execute_string(const std::string &s) {
       current = new_expression;
 
       if (!current->is_cons()) {
-        // A list is not being created, so whatever expression got made should
-        // just be evaluated right now.
-        current = eval_sexp(current);
+        // A list is not being created, so whatever expression just got made is
+        // already completed.
+        sexps.push_back(current);
       }
     } else {
       // Current expression is a cons cell that the new expression must be
@@ -179,10 +183,10 @@ SExpression *execute_string(const std::string &s) {
     }
 
     std::cout << "ERROR: Unmatched left parenthesis." << std::endl;
-    return make_nil();
+    return sexps;
   }
 
-  return current;
+  return sexps;
 }
 
 int main(int argc, char *argv[]) {
@@ -204,7 +208,7 @@ int main(int argc, char *argv[]) {
       std::getline(fs, code, '\0');
     }
 
-    SExpression *result = execute_string(code);
+    SExpression *result = eval_sexps(parse_string(code));
     std::cout << result->as_string() << std::endl;
 
     gc_collect();
@@ -217,7 +221,7 @@ int main(int argc, char *argv[]) {
       std::cout << "> ";
       std::getline(std::cin, input);
 
-      SExpression *result = execute_string(input);
+      SExpression *result = eval_sexps(parse_string(input));
       std::cout << result->as_string() << std::endl;
 
       gc_collect();

@@ -336,6 +336,19 @@ SExpression *eval_sexp(SExpression *sexp) {
   }
 }
 
+SExpression *eval_sexps(std::vector<SExpression *> expressions) {
+  SExpression *result = nullptr;
+
+  for (auto *sexp : expressions) {
+    result = eval_sexp(sexp);
+  }
+
+  if (result == nullptr)
+    result = make_nil();
+
+  return result;
+}
+
 void create_globals() {
   environment.push_back({});
   {
