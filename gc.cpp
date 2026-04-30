@@ -1,6 +1,7 @@
 #include <stack>
 #include <vector>
 
+#include "environment.hpp"
 #include "gc.hpp"
 #include "sexp.hpp"
 
@@ -11,19 +12,21 @@ void gc_add_sexp(SExpression *sexp) {
   expressions.push_back(sexp);
 }
 
-void gc_collect(const std::unordered_map<std::string, SExpression *> &globals) {
-  // Start from the globals, and mark any reachable expression. Then, free all
-  // the expressions that are not marked.
+void gc_collect() {
+  // Starting from expressions within the current environment scopes, mark all
+  // reachable expressions. Then free the expressions that are not marked.
 
   // Right now this will not work for any cycles.
 
   std::stack<SExpression *> need_to_check;
 
-  for (auto &[_, sexp] : globals) {
-    sexp->gc_marked = true;
-    if (sexp->is_cons() || sexp->is_function()) {
-      need_to_check.push(sexp->cons.car);
-      need_to_check.push(sexp->cons.cdr);
+  for (auto &scope : environment) {
+    for (auto &[_, sexp] : scope) {
+      sexp->gc_marked = true;
+      if (sexp->is_cons() || sexp->is_function()) {
+        need_to_check.push(sexp->cons.car);
+        need_to_check.push(sexp->cons.cdr);
+      }
     }
   }
 

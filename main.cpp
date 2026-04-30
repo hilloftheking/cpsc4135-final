@@ -2,17 +2,10 @@
 #include <iostream>
 #include <stack>
 #include <string>
-#include <unordered_map>
-#include <vector>
 
+#include "environment.hpp"
 #include "gc.hpp"
 #include "sexp.hpp"
-
-using Scope = std::unordered_map<std::string, SExpression *>;
-
-std::vector<Scope> environment;
-
-bool should_quit = false;
 
 bool is_whitespace(char c) { return c == ' ' || c == '\n' || c == '\t'; }
 
@@ -60,335 +53,6 @@ std::string parse_sym(const std::string &s, size_t &i) {
   // Now i is at the point right after the symbol
 
   return sym;
-}
-
-SExpression *progn(SExpression *expression);
-
-SExpression *eval_sexp(SExpression *expression) {
-  if (expression->is_cons()) {
-    // This expression is the start of a list
-
-    // Eval the first element of the list to get the function expression
-    SExpression *func = eval_sexp(expression->cons.car);
-
-    SExpression *result;
-
-    if (func->is_native_function()) {
-      // Create a new list of evaluated arguments
-      SExpression *evaled_args = make_nil();
-
-      SExpression *current = expression->cons.cdr;
-      SExpression *current_evaled = evaled_args;
-      while (current->is_cons()) {
-        SExpression *evaled = eval_sexp(current->cons.car);
-
-        current_evaled->type = SExpression::TYPE_CONS;
-        current_evaled->cons.car = evaled;
-        current_evaled->cons.cdr = make_nil();
-        current_evaled = current_evaled->cons.cdr;
-
-        current = current->cons.cdr;
-      }
-
-      result = func->native_procedure(evaled_args);
-    } else if (func->is_special_operator()) {
-      result = func->native_procedure(expression->cons.cdr);
-    } else if (func->is_function()) {
-      SExpression *param_list = func->cons.car;
-      SExpression *body = func->cons.cdr;
-
-      environment.push_back({});
-      Scope &scope = environment.back();
-
-      SExpression *curr_param = param_list;
-      SExpression *curr_arg = expression->cons.cdr;
-      while (curr_param->is_cons() && curr_arg->is_cons()) {
-        const std::string &param_name = *curr_param->cons.car->atom.symbol;
-        scope[param_name] = eval_sexp(curr_arg->cons.car);
-
-        curr_param = curr_param->cons.cdr;
-        curr_arg = curr_arg->cons.cdr;
-      }
-
-      result = progn(body);
-
-      environment.pop_back();
-    } else {
-      std::cout << "ERROR: Invalid function." << std::endl;
-      result = make_nil();
-    }
-
-    return result;
-  } else if (expression->is_symbol()) {
-    const std::string &sym = *expression->atom.symbol;
-
-    // Go backwards through the environment in order to prioritize the most
-    // local scope
-    for (auto scope_it = environment.rbegin(); scope_it != environment.rend();
-         scope_it++) {
-      Scope &scope = *scope_it;
-
-      auto sexpr_it = scope.find(sym);
-      if (sexpr_it != scope.end()) {
-        return sexpr_it->second;
-      }
-    }
-
-    // Variable was not found
-    std::cout << "ERROR: Variable " << sym << " does not exist." << std::endl;
-    return make_nil();
-  } else {
-    return expression;
-  }
-}
-
-SExpression *progn(SExpression *expression) {
-  SExpression *result = nullptr;
-  while (expression->is_cons()) {
-    result = eval_sexp(expression->cons.car);
-    expression = expression->cons.cdr;
-  }
-
-  if (!result)
-    result = make_nil();
-
-  return result;
-}
-
-SExpression *quote(SExpression *expression) {
-  if (!expression->is_cons()) {
-    std::cout << "ERROR: quote expects one argument." << std::endl;
-    return make_nil();
-  }
-
-  return expression->cons.car;
-}
-
-SExpression *define(SExpression *expression) {
-  do {
-    if (!expression->is_cons())
-      break;
-
-    // The second parameter can either be a symbol to define a variable, or a
-    // list to define a function.
-    SExpression *second = expression->cons.car;
-    if (second->is_symbol()) {
-      // Defining a variable
-
-      expression = expression->cons.cdr;
-      if (!expression->is_cons())
-        break;
-
-      SExpression *value_exp = expression->cons.car;
-      SExpression *value = eval_sexp(value_exp);
-
-      // Global scope is used for define
-      environment.front()[*second->atom.symbol] = value;
-      return value;
-    } else if (second->is_cons()) {
-      // Defining a function
-
-      // func_list should be a list of symbols, where the first is the function
-      // name, and the rest are the parameter names.
-      SExpression *func_list = second;
-
-      // func_body is a list of expressions that will be sequentially evaluated
-      // when the function is called
-      SExpression *func_body = expression->cons.cdr;
-
-      SExpression *func_name_symbol = func_list->cons.car;
-      if (!func_name_symbol->is_symbol()) {
-        break;
-      }
-
-      // Make sure the parameter list is valid
-      bool is_valid = true;
-      SExpression *curr = func_list->cons.cdr;
-      while (!curr->is_nil()) {
-        if (!curr->is_cons() || !curr->cons.car->is_symbol()) {
-          is_valid = false;
-          break;
-        }
-        curr = curr->cons.cdr;
-      }
-
-      if (!is_valid)
-        break;
-
-      SExpression *function = make_cons(func_list->cons.cdr, func_body);
-      function->type = SExpression::TYPE_FUNCTION;
-      environment.front()[*func_name_symbol->atom.symbol] = function;
-      return function;
-    }
-  } while (false);
-
-  std::cout << "ERROR: invalid usage of define" << std::endl;
-  return make_nil();
-}
-
-SExpression *cond(SExpression *expression) {
-  do {
-    if (!expression->is_cons())
-      break;
-
-    bool invalid = false;
-
-    SExpression *current = expression;
-    while (current->is_cons()) {
-      SExpression *clause = current->cons.car;
-      if (!clause->is_cons()) {
-        invalid = true;
-        break;
-      }
-
-      SExpression *test_form = clause->cons.car;
-
-      SExpression *action = clause->cons.cdr;
-      if (action->is_nil()) {
-        invalid = true;
-        break;
-      }
-
-      SExpression *test_result = eval_sexp(test_form);
-      if (!test_result->is_nil()) {
-        return progn(action);
-      }
-
-      current = current->cons.cdr;
-    }
-
-    if (invalid)
-      break;
-
-    return make_nil();
-  } while (false);
-
-  std::cout << "ERROR: invalid usage of cond" << std::endl;
-  return make_nil();
-}
-
-SExpression *equal(SExpression *expression) {
-  do {
-    if (!expression->is_cons())
-      break;
-
-    SExpression *first = expression->cons.car;
-
-    expression = expression->cons.cdr;
-    if (!expression->is_cons())
-      break;
-
-    SExpression *second = expression->cons.car;
-
-    if (first->type != second->type)
-      return make_nil();
-
-    if (first->type == SExpression::TYPE_ATOM) {
-      if (first->atom.type != second->atom.type)
-        return make_nil();
-
-      if (first->atom.type == Atom::TYPE_NUMBER) {
-        if (first->atom.number == second->atom.number) {
-          return make_symbol("t");
-        }
-      }
-    }
-
-    return make_nil();
-  } while (false);
-
-  std::cout << "ERROR: = expects two arguments." << std::endl;
-  return make_nil();
-}
-
-SExpression *add(SExpression *expression) {
-  int result = 0;
-  while (expression->is_cons()) {
-    SExpression *car = expression->cons.car;
-    if (car->is_number()) {
-      result += car->atom.number;
-    }
-
-    expression = expression->cons.cdr;
-  }
-
-  return make_number(result);
-}
-
-SExpression *subtract(SExpression *expression) {
-  int result = 0;
-  bool is_first = true;
-  while (expression->is_cons()) {
-    SExpression *car = expression->cons.car;
-    if (car->is_number()) {
-      if (is_first) {
-        is_first = false;
-        result = car->atom.number;
-      } else {
-        result -= car->atom.number;
-      }
-    }
-
-    expression = expression->cons.cdr;
-  }
-
-  return make_number(result);
-}
-
-SExpression *multiply(SExpression *expression) {
-  int result = 1;
-  while (expression->is_cons()) {
-    SExpression *car = expression->cons.car;
-    if (car->is_number()) {
-      result *= car->atom.number;
-    }
-
-    expression = expression->cons.cdr;
-  }
-
-  return make_number(result);
-}
-
-SExpression *divide(SExpression *expression) {
-  int result = 0;
-  bool is_first = true;
-  while (expression->is_cons()) {
-    SExpression *car = expression->cons.car;
-    if (car->is_number()) {
-      if (is_first) {
-        is_first = false;
-        result = car->atom.number;
-      } else {
-        result /= car->atom.number;
-      }
-    }
-
-    expression = expression->cons.cdr;
-  }
-
-  return make_number(result);
-}
-
-SExpression *list(SExpression *expression) {
-  if (expression->is_nil()) {
-    return make_nil();
-  } else {
-    return expression;
-  }
-}
-
-SExpression *quit(SExpression *expression) {
-  should_quit = true;
-  return make_nil();
-}
-
-SExpression *eval(SExpression *expression) {
-  if (!expression->is_cons() || !expression->cons.cdr->is_nil()) {
-    std::cout << "ERROR: eval expects one argument." << std::endl;
-    return make_nil();
-  }
-
-  return eval_sexp(expression->cons.car);
 }
 
 SExpression *execute_string(const std::string &s) {
@@ -522,27 +186,7 @@ SExpression *execute_string(const std::string &s) {
 }
 
 int main(int argc, char *argv[]) {
-  environment.push_back({});
-  {
-    Scope &globals = environment.back();
-
-    globals["nil"] = make_nil();
-    globals["t"] = make_symbol("t");
-
-    globals["progn"] = make_special_operator(progn);
-    globals["quote"] = make_special_operator(quote);
-    globals["define"] = make_special_operator(define);
-    globals["cond"] = make_special_operator(cond);
-
-    globals["="] = make_native_function(equal);
-    globals["+"] = make_native_function(add);
-    globals["-"] = make_native_function(subtract);
-    globals["*"] = make_native_function(multiply);
-    globals["/"] = make_native_function(divide);
-    globals["list"] = make_native_function(list);
-    globals["quit"] = make_native_function(quit);
-    globals["eval"] = make_native_function(eval);
-  }
+  create_globals();
 
   if (argc > 1) {
     // Read from file
@@ -563,20 +207,20 @@ int main(int argc, char *argv[]) {
     SExpression *result = execute_string(code);
     std::cout << result->as_string() << std::endl;
 
-    gc_collect(environment.front());
+    gc_collect();
   } else {
     // Repeatedly read from console input
 
     std::string input;
 
-    while (!should_quit) {
+    while (!should_quit()) {
       std::cout << "> ";
       std::getline(std::cin, input);
 
       SExpression *result = execute_string(input);
       std::cout << result->as_string() << std::endl;
 
-      gc_collect(environment.front());
+      gc_collect();
     }
   }
 }
