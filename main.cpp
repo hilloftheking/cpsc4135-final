@@ -1,3 +1,4 @@
+#include <fstream>
 #include <iostream>
 #include <stack>
 #include <string>
@@ -520,7 +521,7 @@ SExpression *execute_string(const std::string &s) {
   return current;
 }
 
-int main() {
+int main(int argc, char *argv[]) {
   environment.push_back({});
   {
     Scope &globals = environment.back();
@@ -543,15 +544,39 @@ int main() {
     globals["eval"] = make_native_function(eval);
   }
 
-  std::string input;
+  if (argc > 1) {
+    // Read from file
 
-  while (!should_quit) {
-    std::cout << "> ";
-    std::getline(std::cin, input);
+    std::string code;
 
-    SExpression *result = execute_string(input);
+    {
+      std::ifstream fs(argv[1]);
+
+      if (!fs.is_open()) {
+        std::cout << "ERROR: Could not open file." << std::endl;
+        return -1;
+      }
+
+      std::getline(fs, code, '\0');
+    }
+
+    SExpression *result = execute_string(code);
     std::cout << result->as_string() << std::endl;
 
     gc_collect(environment.front());
+  } else {
+    // Repeatedly read from console input
+
+    std::string input;
+
+    while (!should_quit) {
+      std::cout << "> ";
+      std::getline(std::cin, input);
+
+      SExpression *result = execute_string(input);
+      std::cout << result->as_string() << std::endl;
+
+      gc_collect(environment.front());
+    }
   }
 }
