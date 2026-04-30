@@ -72,6 +72,20 @@ std::vector<SExpression *> parse_string(const std::string &s) {
   for (size_t i = 0; i < s.length(); i++) {
     char c = s[i];
 
+    if (c == ';') {
+      // Start of a comment, ignore the rest of the characters until there is a
+      // newline.
+
+      size_t newline_pos = s.find('\n', i + 1);
+      if (newline_pos == std::string::npos) {
+        // Newline not found, just break out of the loop
+        break;
+      } else {
+        i = newline_pos;
+        continue;
+      }
+    }
+
     if (is_whitespace(c))
       continue;
 

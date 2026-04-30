@@ -1,3 +1,4 @@
+; Recursively finds the nth fibonacci number
 (define (fib n)
     (cond
       ((= n 1) 1)
