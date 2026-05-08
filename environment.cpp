@@ -299,13 +299,15 @@ SExpression *eval_sexp(SExpression *sexp) {
       SExpression *body = func->cons.cdr;
 
       environment.push_back({});
-      Scope &scope = environment.back();
+      size_t scope_idx = environment.size() - 1;
 
       SExpression *curr_param = param_list;
       SExpression *curr_arg = sexp->cons.cdr;
       while (curr_param->is_cons() && curr_arg->is_cons()) {
         const std::string &param_name = *curr_param->cons.car->atom.symbol;
-        scope[param_name] = eval_sexp(curr_arg->cons.car);
+
+        SExpression *evaled_arg = eval_sexp(curr_arg->cons.car);
+        environment[scope_idx][param_name] = evaled_arg;
 
         curr_param = curr_param->cons.cdr;
         curr_arg = curr_arg->cons.cdr;
